@@ -24,6 +24,9 @@ else:
 
 cpu_bits   = '64bit' if sys.maxsize > 0xffffffff else '32bit'
 
+# Explicitly load system libstdc++
+libstdcpp = CDLL("libstdc++.so.6")
+
 cur_dir = os.path.abspath(os.path.dirname(__file__))
 libzmq = CDLL(os.path.join(cur_dir, cpu_vendor, cpu_bits, 'libzmq.so'), use_errno=True)
 
