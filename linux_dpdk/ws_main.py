@@ -1455,6 +1455,12 @@ dpdk_src_aarch64 = SrcGroup(dir='src/dpdk/',
                  'lib/eal/arm/rte_cycles.c',
                  'lib/eal/arm/rte_mmu.c',
 
+                 #Amazon ENA
+                 'drivers/net/ena/ena_ethdev.c',
+                 'drivers/net/ena/ena_rss.c',
+                 'drivers/net/ena/base/ena_com.c',
+                 'drivers/net/ena/base/ena_eth_com.c',
+
                  ])
 
 
