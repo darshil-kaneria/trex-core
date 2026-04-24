@@ -58,7 +58,6 @@ gcc_flags = ['-Wall',
              '-Wno-literal-suffix',
              '-Wno-sign-compare',
              '-Wno-strict-aliasing',
-             '-mrtm',
              '-Wno-address-of-packed-member']
 
 
@@ -144,7 +143,8 @@ def options(opt):
     opt.add_option('--pkg-file', '--pkg_file', dest='pkg_file', default=False, action='store', help="Destination filename for 'pkg' option.")
     opt.add_option('--publish-commit', '--publish_commit', dest='publish_commit', default=False, action='store', help="Specify commit id for 'publish_both' option (Please make sure it's good!)")
     opt.add_option('--no-bnxt', dest='no_bnxt', default=False, action='store_true', help="don't use bnxt dpdk driver. use with ./b configure --no-bnxt. no need to run build with it")
-    opt.add_option('--no-mlx', dest='no_mlx', default=(True if march == 'aarch64' else False), action='store', help="don't use mlx4/mlx5 dpdk driver. use with ./b configure --no-mlx. no need to run build with it")
+    opt.add_option('--no-mlx', dest='no_mlx', default=('all' if march == 'aarch64' else None), action='store', help="don't use mlx4/mlx5 dpdk driver. use with ./b configure --no-mlx. no need to run build with it")
+    opt.add_option('--no-gve', dest='no_gve', default=False, action='store_true', help="don't use gve dpdk driver. use with ./b configure --no-gve")
     opt.add_option('--with-mana', dest='with_mana', default=False, action='store_true', help="Use Mana dpdk driver. Use with ./b configure --with-mana.")
     opt.add_option('--with-ntacc', dest='with_ntacc', default=False, action='store_true', help="Use Napatech dpdk driver. Use with ./b configure --with-ntacc.")    
     opt.add_option('--with-bird', default=False, action='store_true', help="Build Bird server. Use with ./b configure --with-bird.")
@@ -799,10 +799,16 @@ def configure(conf):
 
     conf.find_program('strings')
     so = ['/usr/lib/x86_64-linux-gnu/libstdc++.so.6','/usr/lib64/libstdc++.so.6']
-    our_so =  '../scripts/so/x86_64/libstdc++.so.6'
-    d_so =  '../scripts/so/x86_64/_libstdc++.so.6'
+    our_so =  f'../scripts/so/{march}/libstdc++.so.6'
+    d_so =  f'../scripts/so/{march}/_libstdc++.so.6'
     ver = check_version_glibc(so)
-    if ver > 3424:
+
+    our_so_version = {
+        'x86_64': 0,
+        'aarch64': 0,
+    }
+
+    if ver > our_so_version[march]:
         Logs.pprint('YELLOW', 'you have newer {} libstdc++.so remove the old one, do not commit this \n'.format(ver))
         try:
           os.system("mv %s %s " %(our_so,d_so))
@@ -834,6 +840,7 @@ def configure(conf):
     conf.check_cxx(lib = 'z', errmsg = missing_pkg_msg(fedora = 'zlib-devel', ubuntu = 'zlib1g-dev'))
     no_mlx          = conf.options.no_mlx
     no_bnxt         = conf.options.no_bnxt
+    no_gve          = conf.options.no_gve
     with_mana       = conf.options.with_mana
     with_ntacc      = conf.options.with_ntacc
     with_bird       = conf.options.with_bird
@@ -869,6 +876,10 @@ def configure(conf):
     conf.env.NO_BNXT = no_bnxt
     if not no_bnxt:
         Logs.pprint('YELLOW', 'Building bnxt PMD')
+
+    conf.env.NO_GVE = no_gve
+    if no_gve:
+        Logs.pprint('YELLOW', 'Disabling GVE driver')
 
     if conf.env.TAP:
         conf.configure_tap(mandatory = False)
@@ -1327,34 +1338,14 @@ dpdk_src_x86_64 = SrcGroup(dir='src/dpdk/',
                 'drivers/net/intel/ice/ice_dcf_sched.c',
                 'drivers/net/intel/ice/ice_tm.c',
 
-                 #ixgbe
-                 'drivers/net/intel/ixgbe/base/ixgbe_82598.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_82599.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_api.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_common.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_dcb.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_dcb_82598.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_dcb_82599.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_hv_vf.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_mbx.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_phy.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_vf.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_x540.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_x550.c',
-                 'drivers/net/intel/ixgbe/base/ixgbe_e610.c',
-                 'drivers/net/intel/ixgbe/ixgbe_ethdev.c',
-                 'drivers/net/intel/ixgbe/ixgbe_fdir.c',
-                 'drivers/net/intel/ixgbe/ixgbe_flow.c',
-                 'drivers/net/intel/ixgbe/ixgbe_pf.c',
-                 'drivers/net/intel/ixgbe/ixgbe_rxtx.c',
                  'drivers/net/intel/ixgbe/ixgbe_rxtx_vec_sse.c',
                  #'drivers/net/intel/ixgbe/ixgbe_ipsec.c',
-                 'drivers/net/intel/ixgbe/ixgbe_tm.c',
-                 'drivers/net/intel/ixgbe/ixgbe_vf_representor.c',
-                 'drivers/net/intel/ixgbe/rte_pmd_ixgbe.c',
 
                 #  #i40e
                  'drivers/net/intel/i40e/i40e_rxtx_vec_sse.c',
+                 'drivers/net/bnxt/bnxt_rxtx_vec_sse.c',
+                 'drivers/net/intel/iavf/iavf_rxtx_vec_sse.c',
+                 'lib/net/net_crc_sse.c',
                  'drivers/net/intel/i40e/i40e_recycle_mbufs_vec_common.c',
 
                  #igc
@@ -1400,16 +1391,6 @@ dpdk_src_x86_64 = SrcGroup(dir='src/dpdk/',
                  'drivers/net/failsafe/failsafe_flow.c',
                  'drivers/net/failsafe/failsafe_intr.c',
 
-                 #gve
-                 'drivers/net/gve/base/gve_adminq.c',
-                 'drivers/net/gve/gve_rx.c',
-                 'drivers/net/gve/gve_tx.c',
-                 'drivers/net/gve/gve_rx_dqo.c',
-                 'drivers/net/gve/gve_tx_dqo.c',
-                 'drivers/net/gve/gve_ethdev.c',
-                 'drivers/net/gve/gve_version.c',
-                 'drivers/net/gve/gve_rss.c',
-
                  #vdev_netvsc
                  'drivers/net/vdev_netvsc/vdev_netvsc.c',
 
@@ -1428,17 +1409,16 @@ dpdk_src_x86_64 = SrcGroup(dir='src/dpdk/',
                  'lib/ip_frag/rte_ip_frag_common.c',
                  'lib/ip_frag/ip_frag_internal.c',
 
-                 #bonding
-                 'drivers/net/bonding/rte_eth_bond_api.c',
-                 'drivers/net/bonding/rte_eth_bond_pmd.c',
-                 'drivers/net/bonding/rte_eth_bond_flow.c',
-                 'drivers/net/bonding/rte_eth_bond_args.c',
-                 'drivers/net/bonding/rte_eth_bond_8023ad.c',
-                 'drivers/net/bonding/rte_eth_bond_alb.c',
-
                  ])
 
 dpdk_src_x86_64_ext = SrcGroup(dir='src',
+        src_list=[
+                    'drivers/trex_ixgbe_fdir.c',
+                    'drivers/trex_i40e_fdir.c',
+                  ]
+)
+
+dpdk_src_aarch64_ext = SrcGroup(dir='src',
         src_list=[
                     'drivers/trex_ixgbe_fdir.c',
                     'drivers/trex_i40e_fdir.c',
@@ -1463,9 +1443,17 @@ dpdk_src_aarch64 = SrcGroup(dir='src/dpdk/',
                  #virtio
                  'drivers/net/virtio/virtio_rxtx_simple_neon.c',
 
+                 #i40e neon
+                 'drivers/net/intel/i40e/i40e_rxtx_vec_neon.c',
+                 'drivers/net/intel/i40e/i40e_recycle_mbufs_vec_common.c',
+
+                 #iavf neon
+                 'drivers/net/intel/iavf/iavf_rxtx_vec_neon.c',
+
                  #libs
-                 'lib/eal/common/arch/arm/rte_cpuflags.c',
-                 'lib/eal/common/arch/arm/rte_cycles.c',
+                 'lib/eal/arm/rte_cpuflags.c',
+                 'lib/eal/arm/rte_cycles.c',
+                 'lib/eal/arm/rte_mmu.c',
 
                  ])
 
@@ -1505,126 +1493,12 @@ dpdk_src = SrcGroup(dir='src/dpdk/',
                  #'drivers/mempool/stack/rte_mempool_stack.c', # requires dpdk/lib/librte_stack/rte_stack.h
 
 
-                 # drivers
-                 #bnxt
-                 'drivers/net/bnxt/bnxt_cpr.c',
-                 'drivers/net/bnxt/bnxt_ethdev.c',
-                 'drivers/net/bnxt/bnxt_filter.c',
-                 'drivers/net/bnxt/bnxt_flow.c',
-                 'drivers/net/bnxt/bnxt_hwrm.c',
-                 'drivers/net/bnxt/bnxt_irq.c',
-                 'drivers/net/bnxt/bnxt_mpc.c',
-                 'drivers/net/bnxt/bnxt_ring.c',
-                 'drivers/net/bnxt/bnxt_rxq.c',
-                 'drivers/net/bnxt/bnxt_rxr.c',
-                 'drivers/net/bnxt/bnxt_stats.c',
-                 'drivers/net/bnxt/bnxt_txq.c',
-                 'drivers/net/bnxt/bnxt_txr.c',
-                 'drivers/net/bnxt/bnxt_util.c',
-                 'drivers/net/bnxt/bnxt_vnic.c',
-                 'drivers/net/bnxt/bnxt_reps.c',
-                 'drivers/net/bnxt/rte_pmd_bnxt.c',
-                 'drivers/net/bnxt/bnxt_rxtx_vec_sse.c',
 
-                 'drivers/net/bnxt/tf_core/tf_core.c',
-                 'drivers/net/bnxt/tf_core/bitalloc.c',
-                 'drivers/net/bnxt/tf_core/tf_msg.c',
-                 'drivers/net/bnxt/tf_core/rand.c',
-                 'drivers/net/bnxt/tf_core/stack.c',
-                 'drivers/net/bnxt/tf_core/tf_em_internal.c',
-                 'drivers/net/bnxt/tf_core/tf_rm.c',
-                 'drivers/net/bnxt/tf_core/tf_tbl.c',
-                 'drivers/net/bnxt/tf_core/tfp.c',
-                 'drivers/net/bnxt/tf_core/tf_session.c',
-                 'drivers/net/bnxt/tf_core/tf_device.c',
-                 'drivers/net/bnxt/tf_core/tf_device_p4.c',
-                 'drivers/net/bnxt/tf_core/tf_device_p58.c',
-                 'drivers/net/bnxt/tf_core/tf_identifier.c',
-                 'drivers/net/bnxt/tf_core/tf_tcam.c',
-                 'drivers/net/bnxt/tf_core/tf_util.c',
-                 'drivers/net/bnxt/tf_core/tf_if_tbl.c',
-                 'drivers/net/bnxt/tf_core/ll.c',
-                 'drivers/net/bnxt/tf_core/tf_global_cfg.c',
-                 'drivers/net/bnxt/tf_core/tf_hash.c',
-                 'drivers/net/bnxt/tf_core/dpool.c',
-                 'drivers/net/bnxt/tf_core/tf_tcam_shared.c',
-                 'drivers/net/bnxt/tf_core/tf_tbl_sram.c',
-                 'drivers/net/bnxt/tf_core/tf_sram_mgr.c',
-                 'drivers/net/bnxt/tf_core/tf_em_hash_internal.c',
-                 'drivers/net/bnxt/tf_core/tf_tcam_mgr_msg.c',
-                 'drivers/net/bnxt/tf_core/cfa_tcam_mgr.c',
-                 'drivers/net/bnxt/tf_core/cfa_tcam_mgr_p4.c',
-                 'drivers/net/bnxt/tf_core/cfa_tcam_mgr_hwop_msg.c',
-                 'drivers/net/bnxt/tf_core/cfa_tcam_mgr_p58.c',
-                 'drivers/net/bnxt/tf_core/tf_resources.c',
 
-                 'drivers/net/bnxt/tf_core/v3/tfc_act.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_cpm.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_em.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_global_id.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_ident.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_idx_tbl.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_if_tbl.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_init.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_mpc_table.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_msg.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_priv.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_resources.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_session.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_tbl_scope.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_tcam.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_util.c',
-                 'drivers/net/bnxt/tf_core/v3/tfo.c',
-                 'drivers/net/bnxt/tf_core/v3/tfc_vf2pf_msg.c',
 
-                 'drivers/net/bnxt/hcapi/cfa/hcapi_cfa_p4.c',
-                 'drivers/net/bnxt/hcapi/cfa/hcapi_cfa_p58.c',
-                 'drivers/net/bnxt/hcapi/cfa/hcapi_cfa_common.c',
 
-                 'drivers/net/bnxt/hcapi/cfa_v3/bld/host/cfa_bld_mpc.c',
-                 'drivers/net/bnxt/hcapi/cfa_v3/bld/p70/cfa_bld_p70_mpc.c',
-                 'drivers/net/bnxt/hcapi/cfa_v3/bld/p70/host/cfa_bld_p70_host_mpc_wrapper.c',
-                 'drivers/net/bnxt/hcapi/cfa_v3/bld/p70/host/cfa_bld_p70_mpcops.c',
-                 'drivers/net/bnxt/hcapi/cfa_v3/mm/cfa_mm.c',
-                 'drivers/net/bnxt/hcapi/cfa_v3/tim/cfa_tim.c',
-                 'drivers/net/bnxt/hcapi/cfa_v3/tpm/cfa_tpm.c',
 
-                 'drivers/net/bnxt/tf_ulp/bnxt_tf_pmd_shim.c',
-                 'drivers/net/bnxt/tf_ulp/bnxt_ulp.c',
-                 'drivers/net/bnxt/tf_ulp/bnxt_ulp_flow.c',
-                 'drivers/net/bnxt/tf_ulp/bnxt_ulp_meter.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_def_rules.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_fc_mgr.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_flow_db.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_gen_hash.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_gen_tbl.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_ha_mgr.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_mapper.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_mark_mgr.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_matcher.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_port_db.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_rte_handler_tbl.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_rte_parser.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_tun.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_mapper_tf.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_mapper_tfc.c',
-                 'drivers/net/bnxt/tf_ulp/bnxt_ulp_tf.c',
-                 'drivers/net/bnxt/tf_ulp/bnxt_ulp_tfc.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_fc_mgr_tfc.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_fc_mgr_tf.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_alloc_tbl.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_sc_mgr.c',
-                 'drivers/net/bnxt/tf_ulp/ulp_sc_mgr_tfc.c',
 
-                 'drivers/net/bnxt/tf_ulp/generic_templates/ulp_template_db_class.c',
-                 'drivers/net/bnxt/tf_ulp/generic_templates/ulp_template_db_act.c',
-                 'drivers/net/bnxt/tf_ulp/generic_templates/ulp_template_db_tbl.c',
-                 'drivers/net/bnxt/tf_ulp/generic_templates/ulp_template_db_wh_plus_act.c',
-                 'drivers/net/bnxt/tf_ulp/generic_templates/ulp_template_db_wh_plus_class.c',
-                 'drivers/net/bnxt/tf_ulp/generic_templates/ulp_template_db_thor_act.c',
-                 'drivers/net/bnxt/tf_ulp/generic_templates/ulp_template_db_thor_class.c',
-                 'drivers/net/bnxt/tf_ulp/generic_templates/ulp_template_db_thor2_act.c',
-                 'drivers/net/bnxt/tf_ulp/generic_templates/ulp_template_db_thor2_class.c',
 
                  #e1000
                  'drivers/net/intel/e1000/base/e1000_base.c',
@@ -1675,23 +1549,36 @@ dpdk_src = SrcGroup(dir='src/dpdk/',
                  'drivers/net/virtio/virtio_user/vhost_user.c',
                  'drivers/net/virtio/virtio_user/virtio_user_dev.c',
 
-                 'drivers/net/intel/iavf/iavf_ethdev.c',
-                 'drivers/net/intel/iavf/iavf_rxtx.c',
-                 'drivers/net/intel/iavf/iavf_vchnl.c',
-                 'drivers/net/intel/iavf/iavf_tm.c',
-                 'drivers/net/intel/iavf/iavf_generic_flow.c',
-                 'drivers/net/intel/iavf/iavf_hash.c',
-                 'drivers/net/intel/iavf/iavf_fdir.c',
-                 'drivers/net/intel/iavf/iavf_rxtx_vec_sse.c',
 
-                 'drivers/net/intel/iavf/base/iavf_adminq.c',
-                 'drivers/net/intel/iavf/base/iavf_common.c',
-                 'drivers/net/intel/iavf/base/iavf_impl.c',
 
                  #libs
                 'lib/rcu/rte_rcu_qsbr.c',
 
                  'lib/cfgfile/rte_cfgfile.c',
+
+                 #ixgbe (common, shared across architectures)
+                 'drivers/net/intel/ixgbe/base/ixgbe_82598.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_82599.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_api.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_common.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_dcb.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_dcb_82598.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_dcb_82599.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_hv_vf.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_mbx.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_phy.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_vf.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_x540.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_x550.c',
+                 'drivers/net/intel/ixgbe/base/ixgbe_e610.c',
+                 'drivers/net/intel/ixgbe/ixgbe_ethdev.c',
+                 'drivers/net/intel/ixgbe/ixgbe_fdir.c',
+                 'drivers/net/intel/ixgbe/ixgbe_flow.c',
+                 'drivers/net/intel/ixgbe/ixgbe_pf.c',
+                 'drivers/net/intel/ixgbe/ixgbe_rxtx.c',
+                 'drivers/net/intel/ixgbe/ixgbe_tm.c',
+                 'drivers/net/intel/ixgbe/ixgbe_vf_representor.c',
+                 'drivers/net/intel/ixgbe/rte_pmd_ixgbe.c',
 
                  'lib/eal/common/eal_common_hypervisor.c',
                  'lib/eal/common/eal_common_interrupts.c',
@@ -1797,7 +1684,6 @@ dpdk_src = SrcGroup(dir='src/dpdk/',
                  'lib/net/rte_net.c',
                  'lib/net/rte_net_crc.c',
                  'lib/net/rte_arp.c',
-                 'lib/net/net_crc_sse.c',
                  'lib/pci/rte_pci.c',
                  'lib/ring/rte_ring.c',
                  'lib/timer/rte_timer.c',
@@ -1814,7 +1700,16 @@ dpdk_src = SrcGroup(dir='src/dpdk/',
                  'lib/log/log_color.c',
                  'lib/log/log_timestamp.c',
 
-                 'lib/hash/rte_hash_crc.c'
+                 'lib/hash/rte_hash_crc.c',
+
+
+                 #bonding
+                 'drivers/net/bonding/rte_eth_bond_api.c',
+                 'drivers/net/bonding/rte_eth_bond_pmd.c',
+                 'drivers/net/bonding/rte_eth_bond_flow.c',
+                 'drivers/net/bonding/rte_eth_bond_args.c',
+                 'drivers/net/bonding/rte_eth_bond_8023ad.c',
+                 'drivers/net/bonding/rte_eth_bond_alb.c',
 
             ])
 
@@ -2014,6 +1909,23 @@ ntacc_dpdk =SrcGroups([
                 ntacc_dpdk_src
                 ])
 
+gve_dpdk_src = SrcGroup(
+    dir='src/dpdk/drivers/net/gve',
+    src_list=[
+        'base/gve_adminq.c',
+        'gve_rx.c',
+        'gve_tx.c',
+        'gve_rx_dqo.c',
+        'gve_tx_dqo.c',
+        'gve_ethdev.c',
+        'gve_version.c',
+        'gve_rss.c',
+    ])
+
+gve_dpdk = SrcGroups([
+                gve_dpdk_src
+                ])
+
 i40e_dpdk =SrcGroups([
                 i40e_dpdk_src
                 ])
@@ -2144,6 +2056,7 @@ elif march == 'aarch64':
                        '-DRTE_MACHINE_SHA1',
                        '-DRTE_MACHINE_SHA2',
                        '-DRTE_COMPILE_TIME_CPUFLAGS=RTE_CPUFLAG_EVTSTRM,RTE_CPUFLAG_NEON,RTE_CPUFLAG_CRC32,RTE_CPUFLAG_AES,RTE_CPUFLAG_PMULL,RTE_CPUFLAG_SHA1,RTE_CPUFLAG_SHA2',
+                       '-DTREX_USE_BPFJIT',
                        ]
     common_flags_old = common_flags + [
                        '-march=native',
@@ -2157,6 +2070,7 @@ elif march == 'aarch64':
                        '-DRTE_MACHINE_SHA1',
                        '-DRTE_MACHINE_SHA2',
                        '-DRTE_COMPILE_TIME_CPUFLAGS=RTE_CPUFLAG_NEON,RTE_CPUFLAG_CRC32,RTE_CPUFLAG_AES,RTE_CPUFLAG_PMULL,RTE_CPUFLAG_SHA1,RTE_CPUFLAG_SHA2',
+                       '-DTREX_USE_BPFJIT',
                        ]
 
 elif march == 'ppc64le':
@@ -2339,7 +2253,7 @@ bpf_includes_path = '../external_libs/bpf ../external_libs/bpf/bpfjit'
 if march == 'x86_64':
     DPDK_FLAGS=['-DTAP_MAX_QUEUES=16','-D_GNU_SOURCE', '-DPF_DRIVER', '-DX722_SUPPORT', '-DX722_A0_SUPPORT', '-DVF_DRIVER', '-DINTEGRATED_VF', '-include', '../src/pal/linux_dpdk/dpdk_2507_x86_64/rte_config.h','-DALLOW_INTERNAL_API','-DABI_VERSION="25.2"']
 elif march == 'aarch64':
-    DPDK_FLAGS=['-DTAP_MAX_QUEUES=16','-D_GNU_SOURCE', '-DPF_DRIVER', '-DVF_DRIVER', '-DINTEGRATED_VF', '-DRTE_FORCE_INTRINSICS', '-include', '../src/pal/linux_dpdk/dpdk_2507_x86_64_aarch64/rte_config.h']
+    DPDK_FLAGS=['-DTAP_MAX_QUEUES=16','-D_GNU_SOURCE', '-DPF_DRIVER', '-DVF_DRIVER', '-DINTEGRATED_VF', '-DRTE_FORCE_INTRINSICS', '-include', '../src/pal/linux_dpdk/dpdk_2507_aarch64/rte_config.h']
 elif march == 'ppc64le':
     DPDK_FLAGS=['-DTAP_MAX_QUEUES=16','-D_GNU_SOURCE', '-DPF_DRIVER', '-DX722_SUPPORT', '-DX722_A0_SUPPORT', '-DVF_DRIVER', '-DINTEGRATED_VF', '-include', '../src/pal/linux_dpdk/dpdk_2507_x86_64_ppc64le/rte_config.h']
 
@@ -2491,6 +2405,12 @@ class build_option:
     def get_bnxtso_target (self):
         return self.update_executable_name("libbnxt")+'.so'
 
+    def get_gve_target (self):
+        return self.update_executable_name("gve")
+
+    def get_gveso_target (self):
+        return self.update_executable_name("libgve")+'.so'
+
     def get_tcp_target(self):
         return self.update_executable_name("tcp")
 
@@ -2551,7 +2471,7 @@ class build_option:
         else:
             flags += gcc_flags
 
-        if (self.isIntelPlatform() or self.isPpcPlatform()) and not self.is_clang():
+        if (self.isIntelPlatform() or self.isPpcPlatform() or self.isArmPlatform()) and not self.is_clang():
             flags += [
                       '-Wno-aligned-new'
                      ]
@@ -2663,11 +2583,15 @@ def build_prog (bld, build_obj):
     elif march == 'aarch64':
         bp_dpdk = SrcGroups([
                     dpdk_src,
-                    dpdk_src_aarch64
+                    i40e_dpdk_src,
+                    dpdk_src_aarch64,
+                    dpdk_src_aarch64_ext
                     ])
 
-        # software BPF
-        bpf = SrcGroups([bpf_src])
+        # BPF + JIT
+        bpf = SrcGroups([
+                    bpf_src,
+                    bpfjit_src])
 
     elif march == 'ppc64le':
         bp_dpdk = SrcGroups([
@@ -2765,7 +2689,7 @@ def build_prog (bld, build_obj):
     # build the BPF as a shared library
     bld.shlib(features = 'c',
               includes = bpf_includes_path,
-              cflags   = cflags + ['-DSLJIT_CONFIG_AUTO=1','-DINET6'],
+              cflags   = cflags + ['-DSLJIT_CONFIG_AUTO=1','-DINET6','-DTREX_USE_BPFJIT'],
               source   = bpf.file_list(top),
               target   = build_obj.get_bpf_target())
 
@@ -2798,6 +2722,15 @@ def build_prog (bld, build_obj):
           use =['bnxt'],
           source   = bnxt_dpdk.file_list(top),
           target   = build_obj.get_bnxt_target()
+        )
+
+    if bld.env.NO_GVE == False:
+        bld.shlib(
+          features='c',
+          includes = dpdk_includes_path,
+          cflags   = (cflags + DPDK_FLAGS),
+          source   = gve_dpdk.file_list(top),
+          target   = build_obj.get_gve_target()
         )
 
 
@@ -2976,6 +2909,11 @@ def install_single_system (bld, exec_p, build_obj):
     # BNXT
     do_create_link(src = os.path.realpath(o + build_obj.get_bnxtso_target()),
                    name = build_obj.get_bnxtso_target(),
+                   where = so_path)
+
+    # GVE
+    do_create_link(src = os.path.realpath(o + build_obj.get_gveso_target()),
+                   name = build_obj.get_gveso_target(),
                    where = so_path)
 
 
